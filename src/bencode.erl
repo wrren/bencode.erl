@@ -7,7 +7,7 @@ encode( Val ) when is_integer( Val ) ->
     <<$i, Val/binary, $e>>.
 
 decode( Val ) when is_binary( Val ) ->
-    decode( want:list( Val ), [] ).
+    decode( want:string( Val ), [] ).
 
 decode( [$i | T], Out ) ->
     { Rest, Integer } = decode_integer( T, $e ),
@@ -20,9 +20,16 @@ decode( [$l | T], Out ) ->
 decode( [$e | T], Out ) ->
     { lists:reverse( Out ), T };
 
+decode( [$d | T], Out ) ->
+    { Rest, Dict } = decode_dict( T ),
+    decode( Rest, [Dict | Out] );
+
 decode( Value = [_StringStart | _], Out ) ->
     { Rest, String } = decode_string( Value ),
-    decode( Rest, [ String | Out ] ).
+    decode( Rest, [ String | Out ] );
+
+decode( [], Out ) ->
+    lists:reverse( Out ).
 
 decode_string( Value ) ->
     { Rest, Length } = decode_integer( Value, $: ),
@@ -30,6 +37,13 @@ decode_string( Value ) ->
 
 decode_list( Value ) ->
     decode( Value, [] ).
+
+decode_dict( T ) ->
+    { Rest, List } = decode_list( T ),
+    { _, PropList } = lists:foldr( fun( Key, { key, PropList } ) -> { value, [Key | PropList] }; 
+                                        ( Value, { value, [Key | PropList] } ) -> { key, [{ Key, Value } | PropList] } end, 
+                                        List ),
+    { Rest, maps:from_list( lists:reverse( PropList ) ) }.
 
 decode_integer( Value, EndDelimiter ) ->
     decode_integer( Value, [], EndDelimiter ).
