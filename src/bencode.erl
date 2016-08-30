@@ -1,14 +1,39 @@
 -module( bencode ).
 -author( "Warren Kenny <warren.kenny@gmail.com>" ).
 -export( [encode/1, decode/1] ).
+-type value() :: binary() | integer() | list() | map().
 
+%%
+%%  Encode a list of erlang terms to a binary string using bencoding
+%%
+-spec encode( value() ) -> binary().
+encode( Val ) ->
+    encode( Val, [] ).
 
-encode( Val ) when is_integer( Val ) ->
-    <<$i, Val/binary, $e>>.
+-spec encode( [value()], [any()] ) -> binary().
+encode( [Val | T], Out ) when is_list( Val ) ->
+    encode( T, [[$l, encode( Val ), $e] | Out] );
 
+encode( [Val | T], Out ) when is_binary( Val ) ->
+    encode( T, [[want:string( byte_size( Val ) ), $:, Val] | Out ] );
+
+encode( [Val | T], Out ) when is_integer( Val ) or is_float( Val ) ->
+    encode( T, [[$i, want:string( Val ), $e] | Out] );
+
+encode( [Val | T], Out ) when is_map( Val ) ->
+    encode( T, [[$d, lists:flatten( lists:foldl( fun( { Key, Value }, D ) -> [encode( [Key] ), encode( [Value] ) | D] end, [], maps:to_list( Val ) ) ), $e] | Out ] );
+
+encode( [], Out ) ->
+    want:binary( lists:flatten( lists:reverse( Out ) ) ).
+
+%%
+%%  Given a binary string describing bencoded values, decode the string into a list of erlang terms
+%%
+-spec decode( binary() ) -> [value()].
 decode( Val ) when is_binary( Val ) ->
     decode( want:string( Val ), [] ).
 
+-spec decode( [any()], [any()] ) -> [value()].
 decode( [$i | T], Out ) ->
     { Rest, Integer } = decode_integer( T, $e ),
     decode( Rest, [Integer | Out] );
@@ -18,7 +43,7 @@ decode( [$l | T], Out ) ->
     decode( Rest, [ List | Out ] );
 
 decode( [$e | T], Out ) ->
-    { lists:reverse( Out ), T };
+    { T, lists:reverse( Out ) };
 
 decode( [$d | T], Out ) ->
     { Rest, Dict } = decode_dict( T ),
@@ -33,15 +58,16 @@ decode( [], Out ) ->
 
 decode_string( Value ) ->
     { Rest, Length } = decode_integer( Value, $: ),
-    { lists:nthtail( Length, Rest ), lists:sublist( Rest, Length ) }.
+    { lists:nthtail( Length, Rest ), want:binary( lists:sublist( Rest, Length ) ) }.
 
 decode_list( Value ) ->
     decode( Value, [] ).
 
 decode_dict( T ) ->
     { Rest, List } = decode_list( T ),
-    { _, PropList } = lists:foldr( fun( Key, { key, PropList } ) -> { value, [Key | PropList] }; 
-                                        ( Value, { value, [Key | PropList] } ) -> { key, [{ Key, Value } | PropList] } end, 
+    { _, PropList } = lists:foldl( fun( Key, { key, PropList } ) -> { value, [Key | PropList] }; 
+                                        ( Value, { value, [Key | PropList] } ) -> { key, [{ Key, Value } | PropList] } end,
+                                        { key, [] },
                                         List ),
     { Rest, maps:from_list( lists:reverse( PropList ) ) }.
 
